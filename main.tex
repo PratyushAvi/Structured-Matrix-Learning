@@ -1,0 +1,554 @@
+\documentclass{article}
+
+\usepackage[margin=1.5in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{dsfont}
+\usepackage[labelfont=bf]{caption}
+
+\usepackage[dvipsnames,table]{xcolor}
+\definecolor{c0}{HTML}{ffb000}
+\definecolor{c1}{HTML}{fe6100}
+\definecolor{c2}{HTML}{dc267f}
+\definecolor{c3}{HTML}{785ef0}
+\definecolor{c4}{HTML}{648fff}
+
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=c2,
+    citecolor=c4,
+    filecolor=c4,
+    urlcolor=c4
+}
+\usepackage[capitalize,nameinlink,noabbrev]{cleveref}
+\crefformat{equation}{#2(#1)#3}
+\crefmultiformat{equation}{(#2#1#3)}%
+{ and~#2(#1)#3)}{, #2(#1)#3}{ and~#2(#1)#3}
+\crefname{assumption}{Assumption}{Assumptions}
+\crefname{proposition}{Proposition}{Propositions}
+
+\usepackage{thmtools}
+\usepackage{thm-restate}
+
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage[noend]{algpseudocode}
+\algrenewcommand\algorithmiccomment[1]{\hfill{\color{gray}$\triangleright$~#1}}
+
+\usepackage[backend=biber,backref,style=alphabetic,maxalphanames=4,maxcitenames=99,maxbibnames=99,giveninits=true,url=false,doi=false,isbn=false,eprint=false,date=year]{biblatex}
+\addbibresource{references.bib}
+\DeclareSourcemap{
+  \maps[datatype=bibtex, overwrite]{
+    \map{
+      \step[fieldset=editor, null]
+    }
+  }
+}
+\DefineBibliographyStrings{english}{%
+  backrefpage = {cited on page},%
+  backrefpages = {cited on pages}%
+}
+
+% ---------- macros (project conventions) ----------
+\newcommand{\ones}{\mathds{1}}
+\renewcommand{\vec}[1]{\mathbf{#1}}          % bold for vectors AND matrices
+\newcommand{\T}{\mathsf{T}}                  % transpose: \vec{A}^\T
+\newcommand{\F}{\mathrm{F}}                  % Frobenius subscript: \|\cdot\|_\F
+\newcommand{\eps}{\varepsilon}
+\newcommand{\cF}{\mathcal{F}}
+\newcommand{\OPT}{\mathrm{OPT}}
+\newcommand{\iopt}{i^\mathrm{opt}}
+\newcommand{\inner}[2]{\langle #1, #2 \rangle}
+\DeclareMathOperator{\tr}{tr}
+\DeclareMathOperator{\rank}{rank}
+\DeclareMathOperator{\orth}{orth}
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{assumption}[theorem]{Assumption}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\title{Constant factor to (1+$\epsilon$)-approximation for structured matrix learning}
+\author{}
+\date{}
+
+\newcommand{\COLT}[1]{Conference on Learning Theory (COLT) #1}
+
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We study hypothesis selection in the matrix--vector query model.
+A family $\cF = \{\vec{A}_1, \dots, \vec{A}_N\} \subset \mathbb{R}^{n \times n}$ is known, an unknown $\vec{A} \in \mathbb{R}^{n \times n}$ is accessible only through the products $\vec{x} \mapsto \vec{A}\vec{x}$ and $\vec{x} \mapsto \vec{A}^\T\vec{x}$, and the goal is to identify a member of $\cF$ that is nearly as close to $\vec{A}$ in Frobenius norm as the best one.
+Estimating the $N$ distances separately costs $O(\eps^{-2}\log N)$ queries.
+We show that, given a warm start --- any constant-factor approximation to $\vec{A}$, not necessarily drawn from $\cF$ --- only
+\[
+O\bigl( \eps^{-2}\sqrt{\log N} \bigr)
+\]
+queries are needed, a quadratic improvement in the dependence on $\log N$, with no dependence on the dimension $n$.
+
+The saving comes from using both sides of the matrix.
+Writing $k$ for the number of queries spent, a randomized rangefinder first deflates the residual between $\vec{A}$ and the warm start, leaving a remainder that is \emph{spectrally flat}: its spectral norm is a $1/\sqrt k$ fraction of its Frobenius norm.
+A single shared Gaussian quadratic sketch then estimates all $N$ inner products against that remainder at once.
+Flatness is what makes the sketch concentrate as though it drew $k^2$ samples rather than $k$, so a union bound over $N$ hypotheses is paid at $k = \Theta(\sqrt{\log N})$ instead of $\Theta(\log N)$.
+Deflation is the step that requires transpose access, and we show this is unavoidable: in any bounded-precision model, algorithms restricted to one-sided queries need $\widetilde\Omega(\log N)$ queries even when handed a warm start.
+\end{abstract}
+
+\section{Model and main result}\label{sec:model}
+
+
+Throughout, $\cF = \{\vec{A}_1, \dots, \vec{A}_N\} \subset \mathbb{R}^{n \times n}$ is known and $\vec{A} \in \mathbb{R}^{n \times n}$ is unknown.
+The algorithm may issue \emph{right queries} $\vec{x} \mapsto \vec{A}\vec{x}$ and \emph{left queries} $\vec{x} \mapsto \vec{A}^\T\vec{x}$ with arbitrary real query vectors $\vec{x} \in \mathbb{R}^n$, and observes the full output vector exactly.
+Each query vector may depend on the answers to all previous queries.
+The query complexity is the total number of matrix--vector products issued; all other computation (in particular, on the known family $\cF$) is free.
+We write
+\begin{equation}\label{eq:opt}
+d_i \coloneqq \|\vec{A} - \vec{A}_i\|_\F,
+\qquad
+\OPT \coloneqq \min_{i \in [N]} d_i,
+\qquad
+\iopt \in \argmin_{i \in [N]} d_i .
+\end{equation}
+The goal is to output an index $i^\star \in [N]$ with $d_{i^\star} \le (1+\eps)\,\OPT$.
+
+We use $\|\cdot\|_2$ for the spectral norm, $\|\cdot\|_*$ for the nuclear norm, $\sigma_1(\vec{X}) \ge \sigma_2(\vec{X}) \ge \cdots$ for singular values, and $[\vec{X}]_r$ for a best rank-$r$ approximation of $\vec{X}$ in Frobenius norm.
+The inner product is $\inner{\vec{X}}{\vec{Y}} = \tr(\vec{X}^\T\vec{Y})$.
+
+We assume throughout that a \emph{warm start} is available.
+
+\begin{assumption}[Warm start]\label{asm:warm}
+A matrix $\bar{\vec{A}}_0 \in \mathbb{R}^{n \times n}$ with known entries, not necessarily in $\cF$, is given, together with a constant $\gamma \ge 1$ such that $\|\vec{A} - \bar{\vec{A}}_0\|_\F \le \gamma\,\OPT$.
+\end{assumption}
+
+The constant $\gamma$ need not be tight; only the bound is used.
+Note that \cref{asm:warm} is nontrivial exactly when $\OPT > 0$: if $\OPT = 0$ then $\bar{\vec{A}}_0 = \vec{A}$ and the problem is solved offline.
+
+\begin{theorem}[Main]\label{thm:main}
+Let $\eps \in (0,1]$ and $\delta \in (0,1/2)$, and let \cref{asm:warm} hold.
+There is an algorithm making at most
+\[
+O\!\left( \gamma^4\eps^{-2}\sqrt{\log(N/\delta)} \;+\; \log(1/\delta) \right)
+\]
+queries that outputs $i^\star$ with $d_{i^\star} \le (1+\eps)\OPT$ with probability at least $1-\delta$.
+The query count is independent of $n$.
+\end{theorem}
+
+For constant $\gamma$ and $\delta$ this reads $O(\eps^{-2}\sqrt{\log N})$, the form quoted in the abstract.
+The algorithm uses only two rounds of queries: all right queries are made first, with vectors drawn independently of $\vec{A}$, and the left queries follow, with vectors spanning the range of the first round's output.
+
+The argument has three moving parts.
+\Cref{sec:reduction} reduces selection to estimating $N$ inner products against the residual, and shows how accurate those estimates must be.
+\Cref{sec:estimate} gives the estimator and its analysis; this is where the $\sqrt{\log N}$ appears.
+\Cref{sec:mainproof} combines the two.
+\Cref{sec:discussion} explains why two-sided access is necessary (\cref{sec:onesided}) and why deflation is (\cref{sec:whydeflation}).
+
+\section{Preliminaries}\label{sec:prelim}
+
+We need two standard tools: Hanson--Wright concentration for Gaussian quadratic forms, and the spectral-norm guarantee of the randomized rangefinder.
+
+\begin{lemma}[Hanson--Wright, averaged form \cite{Hanson1971,rudelson2013hanson}]\label{lem:hw}
+Let $\vec{N} \in \mathbb{R}^{n \times n}$ be fixed and let $\vec{y}_1, \dots, \vec{y}_k \sim \mathcal{N}(\vec 0, \vec{I}_n)$ be independent.
+Then for every $t \ge 0$,
+\begin{equation}\label{eq:hw}
+\Pr\left[ \left| \frac{1}{k}\sum_{b=1}^{k} \vec{y}_b^\T \vec{N} \vec{y}_b - \tr \vec{N} \right| \ge t \right]
+\le 2\exp\left( -\Omega\!\left( \min\left\{ \frac{k t^2}{\|\vec{N}\|_\F^2},\; \frac{k t}{\|\vec{N}\|_2} \right\} \right) \right).
+\end{equation}
+\end{lemma}
+
+
+We emphasize that \cref{lem:hw} does not require $\vec N$ to be symmetric or positive semidefinite.
+Indeed, $\vec{y}^\T\vec{N}\vec{y} = \vec{y}^\T \vec{N}_{\mathrm{sym}} \vec{y}$ and $\tr\vec{N} = \tr\vec{N}_{\mathrm{sym}}$ for the symmetric part $\vec{N}_{\mathrm{sym}} \coloneqq \tfrac12(\vec{N} + \vec{N}^\T)$, so the symmetric case applies verbatim; and since $\|\vec{N}_{\mathrm{sym}}\|_\F \le \|\vec{N}\|_\F$ and $\|\vec{N}_{\mathrm{sym}}\|_2 \le \|\vec{N}\|_2$ by the triangle inequality, replacing $\vec{N}_{\mathrm{sym}}$ by $\vec{N}$ in the exponent of \cref{eq:hw} only weakens the bound.
+This is used with $\vec{N}_i = (\vec{B}_i^H)^\T\vec{R}$ in \cref{sec:estimate}, which is not symmetric.
+
+\begin{lemma}[Deflation via the randomized rangefinder \cite{HMT11}]\label{lem:rsvd}
+Let $\vec{M} \in \mathbb{R}^{n \times n}$, let $\vec{\Omega} \in \mathbb{R}^{n \times k}$ have i.i.d.\ $\mathcal{N}(0,1)$ entries with $k \ge 4$, and let $\vec{Q} = \orth(\vec{M}\vec{\Omega})$.
+Then with probability $1 - e^{-\Omega(k)}$,
+\begin{equation}\label{eq:deflation}
+\|(\vec{I} - \vec{Q}\vec{Q}^\T)\vec{M}\|_2 = O\!\left( \frac{\|\vec{M}\|_\F}{\sqrt{k}} \right) .
+\end{equation}
+\end{lemma}
+
+\noindent
+In words: sketching with $k$ Gaussian vectors leaves a residual whose spectral norm is a $1/\sqrt k$ fraction of the Frobenius norm of $\vec M$ --- the residual is \emph{spectrally flat}.
+This is the only property of the rangefinder we use.
+
+\begin{proof}
+The claim is trivial for $k = O(1)$, since $\|(\vec{I} - \vec{Q}\vec{Q}^\T)\vec{M}\|_2 \le \|\vec{M}\|_\F$ always; so assume $k$ exceeds any fixed constant.
+Write $\sigma_j \coloneqq \sigma_j(\vec M)$ and split $k$ into a target rank $\rho \coloneqq \lfloor k/2\rfloor - 1$ and an oversampling parameter $p \coloneqq k - \rho$, so that $\rho \le p$ and $p = \Theta(k)$.
+The deviation bound for the Gaussian rangefinder \cite[Thm.~10.8]{HMT11}, applied with $t = e$ and $u = \sqrt k$, gives with probability $1 - e^{-\Omega(k)}$
+\[
+\|(\vec{I} - \vec{Q}\vec{Q}^\T)\vec{M}\|_2
+\le \Bigl( 1 + e\sqrt{12\rho/p} + \frac{e^2 \sqrt{k}\,\sqrt{\rho+p}}{p+1} \Bigr) \sigma_{\rho+1}
++ \frac{e^2 \sqrt{\rho + p}}{p+1} \Bigl( \sum_{j > \rho} \sigma_j^2 \Bigr)^{1/2}.
+\]
+Since $\rho \le p$ and $\rho + p = k = O(p)$, the coefficient of $\sigma_{\rho+1}$ is $O(1)$ and that of the tail is $O(1/\sqrt k)$.
+The tail is at most $\|\vec M\|_\F$, while $\rho + 1 = \Theta(k)$ forces $\sigma_{\rho+1} \le \|\vec{M}\|_\F/\sqrt{\rho+1} = O(\|\vec M\|_\F/\sqrt k)$.
+Both terms are therefore $O(\|\vec M\|_\F/\sqrt k)$.
+\end{proof}
+
+We record two elementary facts used repeatedly.
+For any $\vec{X}$ with $\rank(\vec{X}) \le r$ we have $\|\vec{X}\|_* \le \sqrt{r}\,\|\vec{X}\|_\F$.
+For any $\vec{X}$ and any $r \ge 0$, the tail $\vec{X} - [\vec{X}]_r$ satisfies $\|\vec{X} - [\vec{X}]_r\|_2 = \sigma_{r+1}(\vec{X}) \le \|\vec{X}\|_\F / \sqrt{r+1}$.
+
+\section{Reduction: selection from approximate linear functionals}\label{sec:reduction}
+
+Fix a \emph{pivot} $\bar{\vec{A}} \in \mathbb{R}^{n \times n}$ whose entries are known to the algorithm (it need not lie in $\cF$), and write
+\[
+\vec{B} \coloneqq \vec{A} - \bar{\vec{A}},
+\qquad
+\vec{B}_i \coloneqq \vec{A}_i - \bar{\vec{A}} \quad (i \in [N]).
+\]
+Expanding $d_i^2 = \|\vec{B} - \vec{B}_i\|_\F^2$ gives
+\begin{equation}\label{eq:decomp}
+d_i^2 = \|\vec{B}\|_\F^2 - 2\inner{\vec{B}}{\vec{B}_i} + \|\vec{B}_i\|_\F^2 .
+\end{equation}
+The term $\|\vec{B}\|_\F^2$ is unknown but common to all $i$, and $\|\vec{B}_i\|_\F^2$ is computable offline.
+So selection reduces to estimating $\inner{\vec{B}}{\vec{B}_i}$ for all $i \in [N]$.
+The following lemma guarantees that, for a sufficiently accurate pivot and with sufficiently accurate estimates, we can easily obtain a near-optimal approximation.
+
+
+\begin{lemma}[Selection from relatively accurate functionals]\label{lem:select}
+Let $\eps \in (0,1]$ and $\gamma \ge 1$, and let $\bar{\vec{A}}$ be a pivot with $\|\vec{B}\|_\F = \|\vec{A} - \bar{\vec{A}}\|_\F \le \gamma\,\OPT$.
+Set
+\begin{equation}\label{eq:eps0}
+\eps_0 \coloneqq \frac{\eps}{2\gamma(1+\gamma)} \in (0,1] .
+\end{equation}
+Suppose $\hat{\varphi}_1, \dots, \hat{\varphi}_N$ satisfy
+\begin{equation}\label{eq:relacc}
+\bigl|\hat{\varphi}_i - \inner{\vec{B}}{\vec{B}_i}\bigr| \le \eps_0 \, \|\vec{B}_i\|_\F \, \|\vec{B}\|_\F
+\qquad\text{for every } i \in [N],
+\end{equation}
+and let $i^\star \in \argmin_i \bigl( \|\vec{B}_i\|_\F^2 - 2\hat{\varphi}_i \bigr)$.
+Then $d_{i^\star} \le \bigl(1 + \eps\bigr)\,\OPT$.
+\end{lemma}
+
+\begin{proof}
+Write $\eta_i \coloneqq \eps_0\|\vec{B}_i\|_\F\|\vec{B}\|_\F$ for the error bound in \cref{eq:relacc}, and $s_i \coloneqq \|\vec{B}_i\|_\F^2 - 2\hat{\varphi}_i$ for the score minimized by $i^\star$.
+
+\emph{Step 1: selection.}
+By \cref{eq:decomp}, every $i \in [N]$ satisfies the identity $d_i^2 = \|\vec{B}\|_\F^2 + s_i + 2\bigl(\hat{\varphi}_i - \inner{\vec{B}}{\vec{B}_i}\bigr)$.
+Applying it at $i = i^\star$ and using \cref{eq:relacc}, then the minimality $s_{i^\star} \le s_{\iopt}$, then the identity again at $i = \iopt$ and \cref{eq:relacc} once more,
+\begin{equation}\label{eq:selection}
+d_{i^\star}^2
+\le \|\vec{B}\|_\F^2 + s_{i^\star} + 2\eta_{i^\star}
+\le \|\vec{B}\|_\F^2 + s_{\iopt} + 2\eta_{i^\star}
+\le d_{\iopt}^2 + 2\eta_{\iopt} + 2\eta_{i^\star}
+= \OPT^2 + 2\eta_{\iopt} + 2\eta_{i^\star} .
+\end{equation}
+The unknown quantity $\|\vec{B}\|_\F^2$ cancels; only differences of the scores $s_i$ are used.
+
+If $\|\vec{B}\|_\F = 0$ then $\eta_i = 0$ for every $i$ and \cref{eq:selection} gives $d_{i^\star} \le \OPT$.
+Assume henceforth $\|\vec{B}\|_\F > 0$, so also $\OPT > 0$.
+
+\emph{Step 2: the quadratic.}
+The triangle inequality gives $\|\vec{B}_i\|_\F \le d_i + \|\vec{B}\|_\F$, so \cref{eq:selection} becomes
+\[
+d_{i^\star}^2
+\le \OPT^2 + 2\eps_0 \|\vec{B}\|_\F \bigl( \|\vec{B}_{i^\star}\|_\F + \|\vec{B}_{\iopt}\|_\F \bigr)
+\le \OPT^2 + 2\eps_0\|\vec{B}\|_\F\,\bigl( d_{i^\star} + \OPT + 2\|\vec{B}\|_\F \bigr).
+\]
+Write $a \coloneqq 2\eps_0\|\vec{B}\|_\F > 0$, so that $x \coloneqq d_{i^\star}$ obeys $x^2 - a x - \bigl( \OPT^2 + a\OPT + 2a\|\vec{B}\|_\F \bigr) \le 0$.
+Since the leading coefficient is positive, $x$ is at most the larger root of the associated quadratic, namely
+\[
+x \;\le\; \frac{a}{2} + \sqrt{ \frac{a^2}{4} + \OPT^2 + a\OPT + 2a\|\vec{B}\|_\F } 
+= \frac{a}{2} + \sqrt{u^2+v},
+\]
+where we have introduced the notation $u \coloneqq \OPT + \tfrac{a}{2} > 0$ and $v \coloneqq 2 a \|\vec{B}\|_\F > 0$.
+Now $\bigl( u + \tfrac{v}{2u} \bigr)^2 = u^2 + v + \tfrac{v^2}{4u^2} \ge u^2 + v$, and hence $\sqrt{u^2 + v} \le u + \tfrac{v}{2u}$.
+Using this, we obtain a bound
+\[
+x \;\le\; \frac{a}{2} + u + \frac{v}{2u}
+\;=\; \frac{a}{2} + \Bigl( \OPT + \frac{a}{2} \Bigr) + \frac{a\|\vec{B}\|_\F}{\OPT + a/2}
+\;=\; \OPT + a + \frac{a\|\vec{B}\|_\F}{\OPT + a/2} .
+\]
+Discarding the term $a/2 \ge 0$ from the last denominator gives
+\begin{equation}\label{eq:pivotfree}
+d_{i^\star} \;\le\; \OPT + a\Bigl( 1 + \frac{\|\vec{B}\|_\F}{\OPT} \Bigr)
+= \OPT + 2\eps_0 \|\vec{B}\|_\F \Bigl( 1 + \frac{\|\vec{B}\|_\F}{\OPT} \Bigr).
+\end{equation}
+
+\emph{Step 3: the warm start.}
+By assumption $\|\vec{B}\|_\F \le \gamma\OPT$ so by our choice of $\eps_0 = \eps / (2\gamma(1+\gamma))$,
+\[
+d_{i^\star} \;\le\; \OPT + 2\eps_0\gamma(1+\gamma)\,\OPT \;=\; \bigl(1 + \eps \bigr)\OPT . \qedhere
+\]
+\end{proof}
+
+
+\section{The estimation routine}\label{sec:estimate}
+
+The routine below is the workhorse, invoked with a pivot $\bar{\vec{A}}$, an accuracy $\eps_0 \in (0,1]$, and a failure probability $\delta$.
+Its structure is that of a Hutch\texttt{++}-style estimator: deflate a low-rank part, evaluate its contribution exactly, and sketch only the flat remainder.
+It differs in where the deflation is applied.
+A direct transcription would deflate each product $\vec{B}_i^\T\vec{B}$, whose trace is the target $\inner{\vec{B}}{\vec{B}_i}$; that would require a separate rangefinder per candidate, and hence $\Omega(N)$ queries.
+Instead we deflate the single unknown factor $\vec{B}$ once, at a cost of $O(k)$ queries shared across all $N$ candidates, and flatten the other factor $\vec{B}_i$ offline by truncation --- which is free, because $\vec{B}_i$ is known.
+The product $\vec{N}_i = (\vec{B}_i^H)^\T\vec{R}$ is then flat because both of its factors are, which is what the union bound over $N$ candidates needs.
+
+\medskip
+\noindent\textbf{Algorithm \textsc{EstimateScores}$(\bar{\vec{A}}, \eps_0, \delta)$.}
+Set
+\begin{equation}\label{eq:kdef}
+k \coloneqq \Bigl\lceil C\bigl( \eps_0^{-2}\sqrt{\log(N/\delta)} + \log(1/\delta) \bigr) \Bigr\rceil,
+\qquad
+r_0 \coloneqq \bigl\lceil \alpha\, \eps_0^{2} k \bigr\rceil,
+\end{equation}
+where $C$ is a sufficiently large absolute constant and $\alpha \in (0,1)$ is a sufficiently small one.
+Thus $k = O\bigl( \eps_0^{-2}\sqrt{\log(N/\delta)} + \log(1/\delta) \bigr)$ and $r_0 = \Theta(\eps_0^2 k)$.
+The truncation rank $r_0$ trades the two error terms against each other: shrinking $\alpha$ improves the low-rank bound \cref{eq:lowrank} and worsens the flat bound, and the analysis fixes $\alpha$ first, then takes $C$ large.
+\begin{enumerate}
+\item \textbf{(Sketch.)}
+Draw $\vec{\Omega}, \vec{Y} \in \mathbb{R}^{n \times k}$ with i.i.d.\ $\mathcal{N}(0,1)$ entries, independent of each other, and issue the $2k$ right queries $\vec{A}\vec{\Omega}$ and $\vec{A}\vec{Y}$.
+Form $\vec{B}\vec{\Omega} = \vec{A}\vec{\Omega} - \bar{\vec{A}}\vec{\Omega}$ and $\vec{Q} = \orth(\vec{B}\vec{\Omega}) \in \mathbb{R}^{n \times k'}$, $k' \le k$.
+\item \textbf{(Deflate.)}
+Issue the $k'$ left queries $\vec{A}^\T\vec{q}_j$, $j \in [k']$, and form $\vec{W} \coloneqq \vec{Q}^\T\vec{B} = (\vec{A}^\T\vec{Q})^\T - \vec{Q}^\T\bar{\vec{A}}$ and $\widehat{\vec{B}} \coloneqq \vec{Q}\vec{W} = \vec Q\vec Q^\T\vec B$.
+Write $\vec{R} \coloneqq \vec{B} - \widehat{\vec{B}} = (\vec{I} - \vec{Q}\vec{Q}^\T)\vec{B}$ (unknown to the algorithm).
+\item \textbf{(Split the candidates.)}
+For each $i$, compute the SVD of $\vec{B}_i$ and split
+\[
+\vec{B}_i = \vec{B}_i^L + \vec{B}_i^H,
+\qquad
+\vec{B}_i^L \coloneqq [\vec{B}_i]_{r_0},
+\]
+so that $\rank(\vec{B}_i^L) \le r_0$ and $\|\vec{B}_i^H\|_2 = \sigma_{r_0+1}(\vec B_i) \le \|\vec{B}_i\|_\F / \sqrt{r_0 + 1}$.
+\item \textbf{(Quadratic sketch.)}
+Using the queries $\vec{A}\vec{Y}$ already made in step 1, form $\vec{R}\vec{Y} =(\vec{A}\vec{Y} - \bar{\vec{A}}\vec{Y}) - \widehat{\vec{B}}\vec{Y}$ and, for each $i$,
+\[
+\hat{\psi}_i \coloneqq \frac{1}{k} \inner{\vec{B}_i^H \vec{Y}}{\vec{R}\vec{Y}} = \frac{1}{k}\sum_{b=1}^{k} \vec{y}_b^\T (\vec{B}_i^H)^\T \vec{R}\, \vec{y}_b .
+\]
+\item \textbf{(Output.)}
+Return $\hat{\varphi}_i \coloneqq \inner{\vec{B}_i}{\widehat{\vec{B}}} + \hat{\psi}_i$ for all $i \in [N]$.
+\end{enumerate}
+The query cost is $2k$ right queries and $k' \le k$ left queries, i.e.\ $O(k)$ in total, issued in two rounds: the right queries of step 1 use vectors drawn independently of $\vec{A}$, and only the left queries of step 2 depend on answers already received.
+Everything else --- $\bar{\vec{A}}\vec{\Omega}$, $\vec{Q}^\T\bar{\vec{A}}$, $\bar{\vec{A}}\vec{Y}$, the SVDs of the $\vec{B}_i$, and $\vec{B}_i^H\vec{Y}$ --- is computed offline.
+In particular $\vec R\vec Y$ is computable even though $\vec R$ is not.
+
+\begin{lemma}[Guarantee for \textsc{EstimateScores}]\label{lem:estimate}
+For a sufficiently large absolute constant $C$ in \cref{eq:kdef}, the following holds.
+For any pivot $\bar{\vec{A}}$, any $\eps_0 \in (0,1]$, and any $\delta \in (0,1)$, with probability at least $1 - \delta$ the output of \textsc{EstimateScores} satisfies
+\[
+\bigl| \hat{\varphi}_i - \inner{\vec{B}}{\vec{B}_i} \bigr| \le \eps_0 \, \|\vec{B}_i\|_\F \, \|\vec{B}\|_\F
+\qquad\text{simultaneously for every } i \in [N].
+\]
+\end{lemma}
+
+\begin{proof}
+\emph{Degenerate cases.}
+If $\|\vec{B}\|_\F = 0$ then $\vec{B}\vec{\Omega} = \vec 0$, so $k' = 0$, $\widehat{\vec{B}} = \vec 0$, $\vec R = \vec 0$, $\hat\psi_i = 0$, and $\hat\varphi_i = 0 = \inner{\vec{B}}{\vec{B}_i}$ for all $i$; the claim holds with probability $1$.
+Similarly, for any index $i$ with $\|\vec{B}_i\|_\F = 0$ we have $\vec{B}_i = \vec 0$, hence $\vec{B}_i^L = \vec{B}_i^H = \vec 0$, hence $\hat\varphi_i = 0 = \inner{\vec{B}}{\vec{B}_i}$; such indices may be ignored below.
+So assume $\|\vec{B}\|_\F > 0$ and restrict attention to $i$ with $\|\vec{B}_i\|_\F > 0$.
+
+\emph{Deterministic facts.}
+Because $\vec{Q}$ has orthonormal columns, $\vec{I} - \vec{Q}\vec{Q}^\T$ is an orthogonal projector, so $\vec R = (\vec I - \vec Q\vec Q^\T)\vec B$ satisfies
+\begin{equation}\label{eq:orth}
+\|\vec{R}\|_\F \le \|\vec{B}\|_\F
+\end{equation}
+for every realization of $\vec{\Omega}$.
+Also, $\|\vec{B}_i^L\|_\F \le \|\vec{B}_i\|_\F$ and $\|\vec{B}_i^H\|_\F \le \|\vec{B}_i\|_\F$.
+
+\emph{Error decomposition.}
+Since $\vec{B} = \widehat{\vec{B}} + \vec{R}$ and $\vec{B}_i = \vec{B}_i^L + \vec{B}_i^H$,
+\[
+\inner{\vec{B}}{\vec{B}_i} - \inner{\vec{B}_i}{\widehat{\vec{B}}}
+= \inner{\vec{B}_i}{\vec{R}}
+= \inner{\vec{B}_i^L}{\vec{R}} + \inner{\vec{B}_i^H}{\vec{R}},
+\]
+and therefore, deterministically,
+\begin{equation}\label{eq:errsplit}
+\bigl| \hat{\varphi}_i - \inner{\vec{B}}{\vec{B}_i} \bigr|
+= \bigl|  \bigl( \hat{\psi}_i - \inner{\vec{B}_i^H}{\vec{R}} \bigr) - \inner{\vec{B}_i^L}{\vec{R}} \bigr|
+\leq \bigl|  \hat{\psi}_i - \inner{\vec{B}_i^H}{\vec{R}} \bigr| + \bigl| \inner{\vec{B}_i^L}{\vec{R}} \bigr|.
+\end{equation}
+The two brackets are bounded separately.
+
+\emph{Deflation event.}
+Let $E_1$ be the event that \cref{eq:deflation} holds, i.e.\ $\|\vec{R}\|_2 = O\bigl( \|\vec{B}\|_\F/\sqrt{k} \bigr)$.
+Since $k = \Omega(\log(1/\delta))$ by \cref{eq:kdef}, \cref{lem:rsvd} gives $\Pr[E_1^c] \le e^{-\Omega(k)} \le \delta/4$ for $C$ large enough.
+
+\emph{Low-rank part: deterministic given $E_1$.}
+Since $\rank(\vec{B}_i^L) \le r_0$,
+\[
+|\inner{\vec{B}_i^L}{\vec{R}}|
+\le \|\vec{B}_i^L\|_* \, \|\vec{R}\|_2
+= O\!\left( \sqrt{\frac{r_0}{k}} \right) \|\vec{B}_i\|_\F \, \|\vec{B}\|_\F
+\qquad\text{on } E_1 .
+\]
+By \cref{eq:kdef}, $\sqrt{r_0/k} = O(\sqrt{\alpha}\,\eps_0)$, so choosing $\alpha$ a small enough absolute constant gives
+\begin{equation}\label{eq:lowrank}
+|\inner{\vec{B}_i^L}{\vec{R}}| \le \frac{\eps_0}{4} \, \|\vec{B}_i\|_\F \, \|\vec{B}\|_\F
+\qquad\text{on } E_1, \text{ for every } i .
+\end{equation}
+
+\emph{Flat part: Hanson--Wright.}
+Condition on $\vec{\Omega}$; then $\vec{Q}$, $\vec{R}$, and every $\vec{B}_i^H$ are fixed, and $\vec{Y}$ is an independent Gaussian matrix.
+Each $\hat{\psi}_i$ is an averaged quadratic form with matrix $\vec{N}_i \coloneqq (\vec{B}_i^H)^\T \vec{R}$ and mean $\tr(\vec{N}_i) = \inner{\vec{B}_i^H}{\vec{R}}$.
+Because $r_0 + 1 \ge \alpha\eps_0^2 k$ we have $\|\vec{B}_i^H\|_2 \le \|\vec{B}_i\|_\F/\sqrt{r_0+1} = O\bigl( \|\vec{B}_i\|_\F/(\eps_0\sqrt{k}) \bigr)$, the implied constant depending only on the now-fixed $\alpha$; so on $E_1$,
+\[
+\|\vec{N}_i\|_\F \le \|\vec{B}_i^H\|_2 \|\vec{R}\|_\F = O\!\left( \frac{\|\vec{B}_i\|_\F \|\vec{B}\|_\F}{\eps_0 \sqrt{k}} \right),
+\qquad
+\|\vec{N}_i\|_2 \le \|\vec{B}_i^H\|_2 \|\vec{R}\|_2 = O\!\left( \frac{\|\vec{B}_i\|_\F \|\vec{B}\|_\F}{\eps_0 k} \right),
+\]
+using $\|\vec{R}\|_\F \le \|\vec{B}\|_\F$ from \cref{eq:orth} for the first bound.
+Apply \cref{lem:hw} with $t_i \coloneqq \tfrac{\eps_0}{2}\|\vec{B}_i\|_\F \|\vec{B}\|_\F > 0$; the two exponents satisfy
+\[
+\frac{k t_i^2}{\|\vec{N}_i\|_\F^2} = \Omega\bigl( \eps_0^4 k^2 \bigr),
+\qquad\quad
+\frac{k t_i}{\|\vec{N}_i\|_2} = \Omega\bigl( \eps_0^2 k^2 \bigr) = \Omega\bigl( \eps_0^4 k^2 \bigr),
+\]
+the last step because $\eps_0 \le 1$.
+Since $\eps_0^2 k \ge C\sqrt{\log(N/\delta)}$ by \cref{eq:kdef}, both exponents are $\Omega\bigl( C^2\log(N/\delta) \bigr)$.
+With $\alpha$ already fixed, taking $C$ large enough makes the right side of \cref{eq:hw} at most $\delta/(4N)$.
+Thus, for every realization of $\vec{\Omega}$ in $E_1$, the conditional probability of $|\hat{\psi}_i - \inner{\vec{B}_i^H}{\vec{R}}| > t_i$ is at most $\delta/(4N)$, and a union bound over $i \in [N]$ gives
+\[
+\Pr\Bigl[ E_1 \cap \bigcup_{i \in [N]} \bigl\{ |\hat{\psi}_i - \inner{\vec{B}_i^H}{\vec{R}}| > t_i \bigr\} \Bigr] \le \frac{\delta}{4} .
+\]
+
+\emph{Conclusion.}
+With probability at least $1 - \Pr[E_1^c] - \delta/4 \ge 1 - \delta/2 \ge 1 - \delta$, both \cref{eq:lowrank} and $|\hat{\psi}_i - \inner{\vec{B}_i^H}{\vec{R}}| \le t_i$ hold for all $i$, and then \cref{eq:errsplit} gives
+\[
+\bigl|\hat{\varphi}_i - \inner{\vec{B}}{\vec{B}_i}\bigr| \le \frac{\eps_0}{2}\|\vec{B}_i\|_\F\|\vec{B}\|_\F + \frac{\eps_0}{4}\|\vec{B}_i\|_\F\|\vec{B}\|_\F \le \eps_0 \|\vec{B}_i\|_\F\|\vec{B}\|_\F . \qedhere
+\]
+\end{proof}
+
+\begin{remark}[Where $\sqrt{\log N}$ comes from]\label{rem:k2}
+The union bound in the proof is paid against exponents of order $\eps_0^4 k^2$, i.e.\ against an \emph{effective sample size of $k^2$} from only $O(k)$ queries.
+Both factors of $k$ have distinct origins: one from the averaging over the $k$ columns of $\vec{Y}$, and one from the spectral flatness of $\vec{N}_i = (\vec{B}_i^H)^\T\vec{R}$, whose two factors were flattened separately --- $\vec{B}_i^H$ by the rank-$r_0$ truncation (legal because $\vec{B}_i$ is known), and $\vec{R}$ by the rangefinder (legal because left queries make $\vec{Q}^\T\vec{B}$ exactly computable).
+Setting $\eps_0^4 k^2 = \Theta(\log N)$ gives $k = \Theta\bigl(\eps_0^{-2}\sqrt{\log N}\bigr)$.
+Without the two flattening steps the exponent degrades to order $\eps_0^2 k$, forcing $k = \Omega\bigl(\eps_0^{-2}\log N\bigr)$; see \cref{sec:whydeflation}.
+\end{remark}
+
+\section{Proof of the main theorem}\label{sec:mainproof}
+
+\begin{proof}[Proof of \cref{thm:main}]
+Take the pivot $\bar{\vec{A}} \coloneqq \bar{\vec{A}}_0$, so that $\vec{B} = \vec{A} - \bar{\vec{A}}_0$ and $\vec{B}_i = \vec{A}_i - \bar{\vec{A}}_0$.
+Let $\eps_0$ be as in \cref{eq:eps0}, run \textsc{EstimateScores}$(\bar{\vec{A}}_0, \eps_0, \delta)$, and output $\hat{i} \in \argmin_i (\|\vec{B}_i\|_\F^2 - 2\hat{\varphi}_i)$.
+\Cref{asm:warm} supplies $\|\vec{B}\|_\F \le \gamma\OPT$, so $\bar{\vec{A}}_0$ is a legal pivot for \cref{lem:select}.
+By \cref{lem:estimate}, the hypothesis \cref{eq:relacc} of \cref{lem:select} holds with probability at least $1-\delta$, and on that event \cref{lem:select} gives $d_{\hat{i}} \le (1+\eps)\OPT$.
+The cost is $O(k)$ queries, with
+\[
+k = O\bigl( \eps_0^{-2}\sqrt{\log(N/\delta)} + \log(1/\delta) \bigr)
+= O\bigl( \gamma^4\eps^{-2}\sqrt{\log(N/\delta)} + \log(1/\delta) \bigr),
+\]
+since $\eps_0^{-2} = 4\gamma^2(1+\gamma)^2\eps^{-2} = O(\gamma^4\eps^{-2})$, using $1 + \gamma \le 2\gamma$.
+\end{proof}
+
+\section{Discussion}\label{sec:discussion}
+
+\subsection{Left queries are necessary, in any bounded-precision model}\label{sec:onesided}
+
+Fix $m$ and a code $\{\vec{v}_1, \dots, \vec{v}_N\} \subset \{\pm 1\}^m$ with pairwise Hamming distance at least $m/4$; by Gilbert--Varshamov such a code exists with $m = O(\log N)$.
+Embed each $\vec{v}_i$ in $\mathbb{R}^n$ by zero-padding and take
+\[
+\cF \coloneqq \{\vec{e}_1\vec{v}_i^\T\}_{i \in [N]},
+\qquad
+\vec{A} \coloneqq \vec{e}_1\vec{w}^\T + \sqrt{m}\,\vec{e}_2\vec{e}_3^\T
+\quad\text{for some codeword } \vec{w} .
+\]
+The second term of $\vec{A}$ lies outside the span of $\cF$ and is there only to keep $\OPT > 0$, as \cref{asm:warm} requires.
+Since $\vec{A} - \vec{e}_1\vec{v}_i^\T = \vec{e}_1(\vec{w} - \vec{v}_i)^\T + \sqrt{m}\,\vec{e}_2\vec{e}_3^\T$ has orthogonal summands, and $\|\vec{w} - \vec{v}_i\|_2^2 = 4\operatorname{Ham}(\vec{w}, \vec{v}_i) \ge m$ for $\vec{v}_i \ne \vec{w}$,
+\[
+d_i^2 = \|\vec{w} - \vec{v}_i\|_2^2 + m,
+\qquad
+\OPT = \sqrt{m},
+\qquad
+d_i \ge \sqrt{2m} = \sqrt{2}\,\OPT \ \text{ for } \vec{v}_i \ne \vec{w}.
+\]
+A $(1+\eps)$-approximation with $\eps < \sqrt2 - 1$ therefore forces exact identification of $\vec{w}$.
+The pivot $\bar{\vec{A}}_0 = \vec{0}$ is a legal warm start with $\gamma = \sqrt{2}$, since $\|\vec{A}\|_\F = \sqrt{2m}$, and it carries no information about $\vec{w}$.
+
+A right query $\vec{y}$ returns $\vec{A}\vec{y} = (\vec{w}^\T\vec{y})\,\vec{e}_1 + \sqrt{m}\,y_3\,\vec{e}_2$, whose second component is known in advance.
+If query entries are restricted to $\{\pm1, 0\}$ then $\vec{w}^\T\vec{y} \in \{-m, \dots, m\}$, so each right query has at most $2m+1$ possible outcomes.
+An algorithm making $T$ right queries, each chosen as a function of all previous answers, is a decision tree of depth $T$ and branching factor $2m+1$, and must have at least $N$ leaves; hence
+\[
+T \ge \frac{\log N}{\log(2m+1)} = \Omega\!\left( \frac{\log N}{\log\log N} \right).
+\]
+The same bound holds if answers are merely observed to $O(\log m)$ bits of precision.
+By contrast, a single left query with $\vec{x} = \vec{e}_1$ returns $\vec{A}^\T\vec{e}_1 = \vec{w}$ in full.
+
+Thus one-sided access costs $\widetilde{\Omega}(\log N)$ on instances that two-sided access solves in one query, and this separation persists at the level of the general problem: \cref{thm:main} gives $O(\sqrt{\log N})$ two-sided queries for every instance.
+
+Two caveats.
+First, with unrestricted real entries and exact arithmetic the lower bound is void: the single right query $\vec{y} = (1, 2^{-1}, 2^{-2}, \dots)$ encodes all of $\vec{w}$ in one real number.
+Lower bounds in this model are only meaningful under sign-restricted queries, finite precision, or additive noise; our upper bound, by contrast, survives all of these up to the modifications of \cref{sec:signs}.
+Second, the instance shows that any algorithm achieving $o(\log N)$ queries must exploit two-sidedness on \emph{spiky} (low-stable-rank) differences $\vec{A} - \vec{A}_i$; this is exactly what drives the design of \cref{sec:estimate}.
+
+\subsection{Why deflation: the variance obstruction}\label{sec:whydeflation}
+
+The natural one-shot estimator for $\inner{\vec{B}}{\vec{B}_i}$ is a bilinear sketch, $\frac{1}{k^2}\inner{\vec{X}^\T\vec{B}_i\vec{Y}}{\vec{X}^\T\vec{B}\vec{Y}}$, or its one-sided cousin $\frac{1}{k}\inner{\vec{B}_i\vec{Y}}{\vec{B}\vec{Y}}$.
+For the one-sided version, \cref{lem:hw} applies with $\vec{N}_i = \vec{B}_i^\T\vec{B}$ and the sub-Gaussian exponent is $k t^2 / \|\vec{B}_i^\T\vec{B}\|_\F^2$.
+When $\vec{B}_i$ and $\vec{B}$ are both spiky and share a left factor --- say $\vec{B}_i = \vec{u}\vec{a}_i^\T$ and $\vec{B} = \vec{u}\vec{b}^\T$ with $\|\vec{u}\|_2 = 1$, which is the situation in \cref{sec:onesided} with $\vec{u} = \vec{e}_1$ --- one has $\|\vec{B}_i^\T\vec{B}\|_\F = \|\vec{B}_i\|_\F\|\vec{B}\|_\F$.
+At the target accuracy $t = \eps_0\|\vec{B}_i\|_\F\|\vec{B}\|_\F$ the exponent then degrades to $\eps_0^2 k$, and the union bound over $N$ hypotheses forces $k = \Omega\bigl(\eps_0^{-2}\log N\bigr)$.
+Equivalently: the effective sample size of a bilinear sketch of a rank-one matrix is $k$, not $k^2$, because $\|\vec{X}^\T\vec{u}\vec{a}^\T\vec{Y}\|_\F^2 = \|\vec{X}^\T\vec{u}\|_2^2\,\|\vec{Y}^\T\vec{a}\|_2^2$ is a product of two $k$-degree-of-freedom factors.
+
+The routine of \cref{sec:estimate} removes both spiky factors before sketching.
+The candidate factor is flattened offline, by truncating the known matrix $\vec{B}_i$ at rank $r_0$; the truncation error is controlled \emph{deterministically} against $\|\vec{R}\|_2$ through the nuclear norm, in \cref{eq:lowrank}.
+The unknown factor is flattened by the rangefinder.
+It is worth being precise about where left queries enter here.
+The basis $\vec{Q} = \orth(\vec{B}\vec{\Omega})$ is computable from right queries alone, and \cref{eq:deflation} is a statement about $\vec{Q}$ only; on the rank-one instances of \cref{sec:onesided} one even has $(\vec{I} - \vec{Q}\vec{Q}^\T)\vec{B} = \vec 0$ exactly.
+What one-sided access cannot deliver is the deflated matrix $\widehat{\vec{B}} = \vec{Q}\vec{Q}^\T\vec{B}$ itself: forming $\vec{Q}^\T\vec{B}$ is precisely a left-query operation.
+Without $\widehat{\vec{B}}$ the algorithm can neither evaluate the leading term $\inner{\vec{B}_i}{\widehat{\vec{B}}}$ of $\hat\varphi_i$ nor form the residual sketch $\vec{R}\vec{Y}$, and the estimator collapses back to the un-deflated one.
+
+After both flattening steps, both Hanson--Wright branches carry exponents of order $\eps_0^4 k^2$ and $\eps_0^2 k^2$ (\cref{rem:k2}), and the union bound over $N$ hypotheses is absorbed at $k = \Theta\bigl(\eps_0^{-2}\sqrt{\log N}\bigr)$.
+
+\subsection{Sign-restricted queries}\label{sec:signs}
+
+Suppose query entries must lie in $\{\pm 1, 0\}$, and suppose an a priori bound $\|\vec{A}\|_2 \le \Lambda$ is known.
+The algorithm survives with two modifications, at the cost of adjusting the absolute constants in \cref{eq:kdef}.
+
+First, the Gaussian sketches $\vec{\Omega}$ and $\vec{Y}$ are replaced by Rademacher sketches.
+\Cref{lem:hw} holds verbatim for Rademacher vectors \cite{rudelson2013hanson}.
+\Cref{lem:rsvd} is a Gaussian statement, and we are not aware of a reference establishing \cref{eq:deflation} verbatim for Rademacher $\vec{\Omega}$; we take the sub-Gaussian analogue as a hypothesis, and flag it as a technical gap.
+
+Second, the left queries with the real-valued columns of $\vec{Q}$ are simulated by binary expansion.
+Writing $\vec{q}_j$ to $b$ bits as a signed combination $\tilde{\vec{q}}_j = \sum_{a=1}^{b} 2^{-a}\vec{s}_{j,a}$ with $\vec{s}_{j,a} \in \{\pm1,0\}^n$ costs $b$ legal left queries per column and yields $\|\vec{q}_j - \tilde{\vec{q}}_j\|_2 \le 2^{-b}\sqrt{n}$.
+The algorithm then forms $\widetilde{\vec{W}}$ with rows $(\vec{A}^\T\tilde{\vec{q}}_j)^\T - \vec{q}_j^\T\bar{\vec{A}}$ and sets $\widehat{\vec{B}} \coloneqq \vec{Q}\widetilde{\vec{W}}$, so that
+\[
+\vec{E} \coloneqq \widehat{\vec{B}} - \vec{Q}\vec{Q}^\T\vec{B},
+\qquad
+\|\vec{E}\|_\F = \|\widetilde{\vec{W}} - \vec{W}\|_\F \le 2^{-b}\sqrt{nk}\,\Lambda .
+\]
+Now $\vec{R} \coloneqq \vec{B} - \widehat{\vec{B}}$ no longer satisfies $\vec{R} = (\vec{I} - \vec{Q}\vec{Q}^\T)\vec{R}$.
+The splitting identity $\inner{\vec{B}_i}{\vec{R}} = \inner{\vec{B}_i^L}{\vec{R}} + \inner{\vec{B}_i^H}{\vec{R}}$ is unaffected, since $\vec{B}_i^L + \vec{B}_i^H = \vec{B}_i$ holds by construction; the perturbation instead enters the leading term of $\hat\varphi_i$, which now estimates $\inner{\vec{B}_i}{\vec{Q}\vec{Q}^\T\vec{B}}$ with error $\inner{\vec{B}_i}{\vec{E}}$, of magnitude at most $\|\vec{B}_i\|_\F \|\vec{E}\|_\F$.
+Likewise $\|\vec{R}\|_\F \le \|\vec{B}\|_\F + \|\vec{E}\|_\F$ and, on the deflation event, $\|\vec{R}\|_2 = O\bigl(\|\vec{B}\|_\F/\sqrt{k}\bigr) + \|\vec{E}\|_\F$.
+All three perturbations are absorbed once $\|\vec{E}\|_\F = O(\eps_0\|\vec{B}\|_\F)$ with a small enough implied constant.
+
+Setting $b$ requires a lower bound on $\|\vec{B}\|_\F$, which is obtained from the right queries already made: $\widehat{\beta}^2 \coloneqq \frac{1}{k}\|\vec{B}\vec{\Omega}\|_\F^2$ is an averaged quadratic form with matrix $\vec{B}^\T\vec{B}$, mean $\|\vec{B}\|_\F^2$, $\|\vec{B}^\T\vec{B}\|_\F \le \|\vec{B}\|_2\|\vec{B}\|_\F \le \|\vec{B}\|_\F^2$, and $\|\vec{B}^\T\vec{B}\|_2 \le \|\vec{B}\|_\F^2$, so \cref{lem:hw} with $t = \|\vec{B}\|_\F^2/2$ gives $\tfrac12\|\vec{B}\|_\F^2 \le \widehat{\beta}^2 \le 2\|\vec{B}\|_\F^2$ except with probability $e^{-\Omega(k)}$.
+(If $\widehat{\beta} = 0$ then $\vec{B}\vec{\Omega} = \vec{0}$, which for $\|\vec{B}\|_\F > 0$ has probability zero; the algorithm outputs $\argmin_i \|\vec{B}_i\|_\F$.)
+Taking $b = O\bigl( \log(nk\Lambda/(\eps_0\|\vec{B}\|_\F)) \bigr)$ suffices.
+
+The net effect is a multiplicative $O(\log(n\Lambda/(\eps\,\OPT)))$ overhead on the left queries, which are one third of the total; the right-query count is unchanged.
+
+\subsection{Computational cost}\label{sec:computation}
+
+The query count is the complexity measure here, but the offline work is nontrivial: the algorithm computes a top-$r_0$ SVD of $\vec{B}_i$ for every $i \in [N]$.
+Since $r_0 \le k$, randomized low-rank SVD brings the per-candidate cost to $O(n^2 k)$, for $O(N n^2 k)$ in total.
+No attempt has been made to optimize this.
+
+\subsection{Open problems}\label{sec:open}
+
+\begin{enumerate}
+\item \textbf{Is the warm start free?}
+\Cref{asm:warm} is the only nonstandard input.
+A Scheff\'e-style tournament at constant accuracy would produce a constant-factor pivot, but it requires each pairwise comparison to succeed with confidence $1 - N^{-2}$, and any estimator built from $k$ scalar samples of an \emph{un-deflated} residual concentrates only at rate $e^{-\Theta(k)}$ on spiky instances, forcing $k = \Omega(\log N)$.
+The deflation that repairs the rate is pivot-relative: its error scale is $\eps_0\|\vec{B}_i\|_\F\|\vec{B}\|_\F$, and $\|\vec{B}\|_\F$ is the \emph{current} pivot's distance, not $\OPT$.
+Iterated contraction from an arbitrary $\vec{A}_1$ therefore costs $O\bigl(\sqrt{\log N}\,\log(2+\kappa)\bigr)$ queries with $\kappa = \|\vec{A} - \vec{A}_1\|_\F/\OPT$.
+Can the $\log\kappa$ be removed in a finite-precision model, giving a scale-free $O(\eps^{-2}\sqrt{\log N})$ algorithm?
+\item \textbf{Matching lower bound.}
+We know of no $\Omega(\sqrt{\log N})$ lower bound for two-sided sign-restricted (or finite-precision) queries.
+The instances of \cref{sec:onesided} are solved in one two-sided query, and Fano-type arguments leak because each query returns $n$ coordinates.
+\item \textbf{Dependence on $\eps$.}
+The error term in \cref{lem:estimate} is already localized as $\eps_0\|\vec{B}_i\|_\F\|\vec{B}\|_\F$, which suggests the $\eps^{-2}$ might improve to $\eps^{-1}$ by a sharper final round; we do not currently see how.
+\item \textbf{One-sided complexity.}
+For right-only queries the truth plausibly is $\Theta(\eps^{-2}\log N)$; the upper bound follows from the un-deflated estimator of \cref{sec:whydeflation}, while \cref{sec:onesided} gives $\Omega(\log N/\log\log N)$.
+\end{enumerate}
+
+\printbibliography
+
+\end{document}
+
