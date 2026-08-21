@@ -386,8 +386,15 @@ By \cref{eq:kdef}, $\sqrt{r_0/k} = O(\sqrt{\alpha}\,\eps_0)$, so choosing $\alph
 \end{equation}
 
 \emph{Flat part: Hanson--Wright.}
-Condition on $\vec{\Omega}$; then $\vec{Q}$, $\vec{R}$, and every $\vec{B}_i^H$ are fixed, and $\vec{Y}$ is an independent Gaussian matrix.
-Each $\hat{\psi}_i$ is an averaged quadratic form with matrix $\vec{N}_i \coloneqq (\vec{B}_i^H)^\T \vec{R}$ and mean $\tr(\vec{N}_i) = \inner{\vec{B}_i^H}{\vec{R}}$.
+Condition on $\vec{\Omega}$; then $\vec{Q}$, $\vec{R}$, and every $\vec{B}_i^H$ are fixed, and $\vec{Y}$ is an independent Gaussian matrix whose columns $\vec{y}_1,\dots,\vec{y}_k$ remain i.i.d.\ $\mathcal{N}(\vec 0,\vec{I}_n)$ after conditioning.
+So \cref{lem:hw} applies to each $i$ with the fixed matrix $\vec{N}_i \coloneqq (\vec{B}_i^H)^\T \vec{R}$: indeed
+\[
+\hat{\psi}_i = \frac{1}{k}\sum_{b=1}^{k} \vec{y}_b^\T \vec{N}_i \vec{y}_b ,
+\qquad
+\tr(\vec{N}_i) = \inner{\vec{B}_i^H}{\vec{R}} ,
+\]
+so $\hat\psi_i$ is an averaged quadratic form whose mean is exactly the quantity it must estimate in \cref{eq:errsplit}.
+(Here $\vec{N}_i$ is not symmetric, which \cref{lem:hw} permits.)
 Because $r_0 + 1 \ge \alpha\eps_0^2 k$ we have $\|\vec{B}_i^H\|_2 \le \|\vec{B}_i\|_\F/\sqrt{r_0+1} = O\bigl( \|\vec{B}_i\|_\F/(\eps_0\sqrt{k}) \bigr)$, the implied constant depending only on the now-fixed $\alpha$; so on $E_1$,
 \[
 \|\vec{N}_i\|_\F \le \|\vec{B}_i^H\|_2 \|\vec{R}\|_\F = O\!\left( \frac{\|\vec{B}_i\|_\F \|\vec{B}\|_\F}{\eps_0 \sqrt{k}} \right),
@@ -395,14 +402,25 @@ Because $r_0 + 1 \ge \alpha\eps_0^2 k$ we have $\|\vec{B}_i^H\|_2 \le \|\vec{B}_
 \|\vec{N}_i\|_2 \le \|\vec{B}_i^H\|_2 \|\vec{R}\|_2 = O\!\left( \frac{\|\vec{B}_i\|_\F \|\vec{B}\|_\F}{\eps_0 k} \right),
 \]
 using $\|\vec{R}\|_\F \le \|\vec{B}\|_\F$ from \cref{eq:orth} for the first bound.
-Apply \cref{lem:hw} with $t_i \coloneqq \tfrac{\eps_0}{2}\|\vec{B}_i\|_\F \|\vec{B}\|_\F > 0$; the two exponents satisfy
+Apply \cref{lem:hw} with $t_i \coloneqq \tfrac{\eps_0}{2}\|\vec{B}_i\|_\F \|\vec{B}\|_\F > 0$, and abbreviate $\Pi \coloneqq \|\vec{B}_i\|_\F\|\vec{B}\|_\F$, so that $t_i = \tfrac{\eps_0}{2}\Pi$; the two exponents satisfy
 \[
-\frac{k t_i^2}{\|\vec{N}_i\|_\F^2} = \Omega\bigl( \eps_0^4 k^2 \bigr),
+\frac{k t_i^2}{\|\vec{N}_i\|_\F^2}
+= \Omega\!\left( \frac{k \cdot \eps_0^2\Pi^2}{\Pi^2/(\eps_0^2 k)} \right)
+= \Omega\bigl( \eps_0^4 k^2 \bigr),
 \qquad\quad
-\frac{k t_i}{\|\vec{N}_i\|_2} = \Omega\bigl( \eps_0^2 k^2 \bigr) = \Omega\bigl( \eps_0^4 k^2 \bigr),
+\frac{k t_i}{\|\vec{N}_i\|_2}
+= \Omega\!\left( \frac{k \cdot \eps_0\Pi}{\Pi/(\eps_0 k)} \right)
+= \Omega\bigl( \eps_0^2 k^2 \bigr) = \Omega\bigl( \eps_0^4 k^2 \bigr),
 \]
-the last step because $\eps_0 \le 1$.
-Since $\eps_0^2 k \ge C\sqrt{\log(N/\delta)}$ by \cref{eq:kdef}, both exponents are $\Omega\bigl( C^2\log(N/\delta) \bigr)$.
+the last step because $\eps_0 \le 1$; note that the scale $\Pi$ cancels, so one bound serves all $N$ candidates.
+Thus the minimum in \cref{eq:hw} is $\Omega(\eps_0^4k^2)$, and a union bound over the $N$ candidates is affordable exactly when this absorbs $\log(N/\delta)$, i.e.\ when
+\[
+\eps_0^4 k^2 = \Omega\bigl( \log(N/\delta) \bigr)
+\qquad\Longleftrightarrow\qquad
+k = \Omega\bigl( \eps_0^{-2}\sqrt{\log(N/\delta)} \bigr) ,
+\]
+which is how $k$ was chosen in \cref{eq:kdef}: the exponent is quadratic in $k$, so solving for $k$ takes a square root of $\log N$.
+Concretely, $\eps_0^2 k \ge C\sqrt{\log(N/\delta)}$ by \cref{eq:kdef} makes both exponents $\Omega\bigl( C^2\log(N/\delta) \bigr)$.
 With $\alpha$ already fixed, taking $C$ large enough makes the right side of \cref{eq:hw} at most $\delta/(4N)$.
 Thus, for every realization of $\vec{\Omega}$ in $E_1$, the conditional probability of $|\hat{\psi}_i - \inner{\vec{B}_i^H}{\vec{R}}| > t_i$ is at most $\delta/(4N)$, and a union bound over $i \in [N]$ gives
 \[
